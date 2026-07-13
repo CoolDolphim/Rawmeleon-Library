@@ -1,4 +1,4 @@
-local RawmeleonLibrary = {}
+local Rawmeleon = {}
 
 function CustomNetLib.ConvertToRaw(sentence: string, x: number, y: number, z: number, targetInstance: Instance?)
 	local totalLetters = string.len(sentence)
@@ -294,4 +294,4 @@ function CustomNetLib.GetServiceRawData(serviceName: string)
 	return b
 end
 
-return RawmeleonLibrary
+return Rawmeleon
