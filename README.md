@@ -1,2 +1,3 @@
-# Rawmeleon Library
-This library was mainly made for scripting and receving raw data.
+Rawmeleon is a low-level binary layout framework built to bypass standard network diagnostic reflection hooks and script interface argument logs within Luau execution spaces.
+
+View the official documentation.
