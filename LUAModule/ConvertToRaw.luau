@@ -1,13 +1,10 @@
 local CustomNetLib = {}
 
 function CustomNetLib.ConvertToRaw(sentence: string)
-    -- 1. Calculate the metrics using string patterns
     local totalLetters = string.len(sentence)
     
-    -- Count punctuation characters (like commas, periods, exclamation points)
     local _, punctuationCount = string.gsub(sentence, "[%p]", "")
     
-    -- 2. Allocate exact buffer space: 1 byte (Letters) + 1 byte (Punctuation) + String Bytes
     local totalRequiredSize = 1 + 1 + totalLetters
     local b = buffer.create(totalRequiredSize)
     
@@ -19,7 +16,7 @@ function CustomNetLib.ConvertToRaw(sentence: string)
     return b
 end
 
--- The Reading Module (Used by your script on the receiving end to decode it)
+-- The Reading Module 
 function CustomNetLib.DecodeRaw(b: buffer)
     local totalLetters = buffer.readu8(b, 0)
     local punctuationCount = buffer.readu8(b, 1)
