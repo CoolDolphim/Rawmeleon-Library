@@ -8,7 +8,6 @@ function CustomNetLib.ConvertToRaw(sentence: string)
     local totalRequiredSize = 1 + 1 + totalLetters
     local b = buffer.create(totalRequiredSize)
     
-    -- 3. Sequentially write the data to the raw packet
     buffer.writeu8(b, 0, totalLetters)       -- Position 0: Letter count
     buffer.writeu8(b, 1, punctuationCount)   -- Position 1: Punctuation count
     buffer.writestring(b, 2, sentence)       -- Position 2 onwards: The actual sentence
