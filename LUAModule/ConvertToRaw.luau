@@ -1,4 +1,4 @@
-local CustomNetLib = {}
+local RawmeleonLibrary = {}
 
 function CustomNetLib.ConvertToRaw(sentence: string, x: number, y: number, z: number, targetInstance: Instance)
 	local totalLetters = string.len(sentence)
@@ -387,4 +387,4 @@ function CustomNetLib.ReturnRawData(b: buffer)
 	return table.concat(bytes, " ")
 end
 
-return CustomNetLib
+return RawmeleonLibrary
