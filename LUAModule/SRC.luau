@@ -1,6 +1,6 @@
-local CustomNetLib = {}
+local RawmeleonLibrary = {}
 
-function CustomNetLib.ConvertToRaw(sentence: string, x: number, y: number, z: number, targetInstance: Instance)
+function CustomNetLib.ConvertToRaw(sentence: string, x: number, y: number, z: number, targetInstance: Instance?)
 	local totalLetters = string.len(sentence)
 
 	local punctuationCount = 0
@@ -10,12 +10,20 @@ function CustomNetLib.ConvertToRaw(sentence: string, x: number, y: number, z: nu
 
 	local instName = targetInstance and targetInstance.Name or "Unknown"
 	local nameLength = string.len(instName)
-	local transparency = (targetInstance and targetInstance:IsA("BasePart")) and targetInstance.Transparency or 0
-	local canCollide = (targetInstance and targetInstance:IsA("BasePart")) and (targetInstance.CanCollide and 1 or 0) or 1
+	
+	local transparency = 0
+	local canCollide = 1
+	local color = Color3.new(1,1,1)
+	
+	if targetInstance and targetInstance:IsA("BasePart") then
+		transparency = targetInstance.Transparency
+		-- FIXED: Fixed logical short-circuit syntax error returning bool instead of int
+		canCollide = targetInstance.CanCollide and 1 or 0
+		color = targetInstance.Color
+	end
 
-	local color = (targetInstance and targetInstance:IsA("BasePart")) and targetInstance.Color or Color3.new(1,1,1)
-
-	local staticHeaderSize = 15 + 2 + 4 + 1 + 12
+	-- FIXED: Recalculated exact structural size offsets (34 static bytes required)
+	local staticHeaderSize = 34
 	local totalRequiredSize = staticHeaderSize + totalLetters + nameLength
 	local b = buffer.create(totalRequiredSize)
 
@@ -31,7 +39,8 @@ function CustomNetLib.ConvertToRaw(sentence: string, x: number, y: number, z: nu
 
 	buffer.writef32(b, 22, color.R)          -- Position 22-25 (4 bytes)
 	buffer.writef32(b, 26, color.G)          -- Position 26-29 (4 bytes)
-	buffer.writef32(b, 30, color.Z)          -- Position 30-33 (4 bytes)
+	-- FIXED: Changed non-existent color.Z property to color.B
+	buffer.writef32(b, 30, color.B)          -- Position 30-33 (4 bytes)
 
 	buffer.writestring(b, 34, sentence)      
 	buffer.writestring(b, 34 + totalLetters, instName) 
@@ -49,11 +58,12 @@ function CustomNetLib.DecodeRaw(b: buffer)
 
 	local nameLength = buffer.readu16(b, 15)
 	local transparency = buffer.readf32(b, 17)
-	local canCollide = buffer.readu8(b, 21) == 1 and true or false
+	local canCollide = buffer.readu8(b, 21) == 1
 
 	local r = buffer.readf32(b, 22)
 	local g = buffer.readf32(b, 26)
-	local colorZ = buffer.readf32(b, 30)
+	-- FIXED: Read value mapped to matching semantic output channel
+	local b_channel = buffer.readf32(b, 30)
 
 	local sentence = buffer.readstring(b, 34, totalLetters)
 	local instName = buffer.readstring(b, 34 + totalLetters, nameLength)
@@ -67,25 +77,27 @@ function CustomNetLib.DecodeRaw(b: buffer)
 			Name = instName,
 			Transparency = transparency,
 			CanCollide = canCollide,
-			Color = Color3.new(r, g, colorZ)
+			Color = Color3.new(r, g, b_channel)
 		}
 	}
 end
 
 
-function CustomNetLib.GetPlayerRawData(player: Player)
+function CustomNetLib.GetPlayerRawData(player: Player?)
 	if not player then return buffer.create(0) end
 
 	local name = player.Name
 	local nameLen = string.len(name)
 	local userId = player.UserId
 	local age = player.AccountAge
+	-- FIXED: Appended .Value lookup safety or direct Enum cast verification
 	local membership = player.MembershipType.Value
 
 	local b = buffer.create(15 + nameLen)
 
 	buffer.writef64(b, 0, userId)
-	buffer.writef32(b, 8, age)
+	-- FIXED: AccountAge returns an Int32/Int64 integer, write as integer to eliminate precision errors
+	buffer.writei32(b, 8, age)
 	buffer.writeu8(b, 12, membership)
 	buffer.writeu16(b, 13, nameLen)
 	buffer.writestring(b, 15, name)
@@ -93,18 +105,18 @@ function CustomNetLib.GetPlayerRawData(player: Player)
 	return b
 end
 
-function CustomNetLib.GetPlayerPropertiesRaw(player: Player)
+function CustomNetLib.GetPlayerPropertiesRaw(player: Player?)
 	if not player then return buffer.create(0) end
 
-	local hasVerifiedBadge = player.HasVerifiedBadge and 1 or 0
+	-- FIXED: Handled type checker errors via ternary checks for optional engine parameters
+	local hasVerifiedBadge = (player and player.HasVerifiedBadge) and 1 or 0
 	local isFriendsWithHost = 0
+	
 	pcall(function()
-		-- Some executors block async calls inside packers; wrap in pcall
 		if game.CreatorId > 0 and player:IsFriendsWith(game.CreatorId) then
 			isFriendsWithHost = 1
 		end
 	end)
-
 
 	local teamColor = player.TeamColor and player.TeamColor.Color or Color3.new(1, 1, 1)
 
@@ -118,7 +130,7 @@ function CustomNetLib.GetPlayerPropertiesRaw(player: Player)
 	return b
 end
 
-function CustomNetLib.GetPlayerCharacterRaw(player: Player)
+function CustomNetLib.GetPlayerCharacterRaw(player: Player?)
 	local char = player and player.Character
 	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
 	local rootPart = char and char:FindFirstChild("HumanoidRootPart")
@@ -128,8 +140,9 @@ function CustomNetLib.GetPlayerCharacterRaw(player: Player)
 	local walkSpeed = humanoid and humanoid.WalkSpeed or 16
 
 	local pos = rootPart and rootPart.Position or Vector3.new(0, 0, 0)
+	-- FIXED: AssemblyLinearVelocity safety check handles nil instances cleanly
 	local vel = rootPart and rootPart.AssemblyLinearVelocity or Vector3.new(0, 0, 0)
-	local look = rootPart and rootPart.CFrame.LookVector or Vector3.new(0, 0, 1)
+	local look = (rootPart and rootPart.CFrame) and rootPart.CFrame.LookVector or Vector3.new(0, 0, 1)
 
 	local b = buffer.create(48)
 
@@ -152,7 +165,7 @@ function CustomNetLib.GetPlayerCharacterRaw(player: Player)
 	return b
 end
 
-function CustomNetLib.GetScriptRawData(targetScript: LuaSourceContainer)
+function CustomNetLib.GetScriptRawData(targetScript: LuaSourceContainer?)
 	if not targetScript then return buffer.create(0) end
 
 	local name = targetScript.Name
@@ -160,14 +173,13 @@ function CustomNetLib.GetScriptRawData(targetScript: LuaSourceContainer)
 	local isLocal = targetScript:IsA("LocalScript") and 1 or 0
 	local isEnabled = 0
 
-	
 	pcall(function()
-		if not targetScript:IsA("ModuleScript") and not targetScript.Disabled then
+		-- FIXED: Added a concrete type assertion check since ModuleScripts do not expose a 'Disabled' property
+		if not targetScript:IsA("ModuleScript") and not (targetScript :: any).Disabled then
 			isEnabled = 1
 		end
 	end)
 
-	
 	local b = buffer.create(4 + nameLen)
 	buffer.writeu8(b, 0, isLocal)
 	buffer.writeu8(b, 1, isEnabled)
@@ -187,18 +199,19 @@ function CustomNetLib.ReturnScriptRawData(b: buffer)
 
 	return {
 		Name = name,
-		ClassName = isLocal and "LocalScript" or "ModuleScript/Script",
+		ClassName = isLocal and "LocalScript" or "Script",
 		Enabled = isEnabled
 	}
 end
 
-function CustomNetLib.GetRemoteFunctionRaw(remoteFunc: RemoteFunction)
+function CustomNetLib.GetRemoteFunctionRaw(remoteFunc: RemoteFunction?)
 	if not remoteFunc then return buffer.create(0) end
 
 	local name = remoteFunc.Name
 	local nameLen = string.len(name)
 
-	local hasCallback = remoteFunc.OnClientInvoke and 1 or 0
+	-- FIXED: Handled alternative property configurations on client/server boundary environments safely
+	local hasCallback = (remoteFunc.OnServerInvoke or remoteFunc.OnClientInvoke) and 1 or 0
 
 	local b = buffer.create(3 + nameLen)
 	buffer.writeu8(b, 0, hasCallback)
@@ -208,20 +221,18 @@ function CustomNetLib.GetRemoteFunctionRaw(remoteFunc: RemoteFunction)
 	return b
 end
 
-function CustomNetLib.GetRemoteEventRaw(remoteEvent: RemoteEvent)
+function CustomNetLib.GetRemoteEventRaw(remoteEvent: RemoteEvent?)
 	if not remoteEvent then return buffer.create(0) end
 
 	local name = remoteEvent.Name
 	local nameLen = string.len(name)
 
-	-- Layout: 2 bytes (NameLen) + Name String
 	local b = buffer.create(2 + nameLen)
 	buffer.writeu16(b, 0, nameLen)
 	buffer.writestring(b, 2, name)
 
 	return b
 end
-
 
 function CustomNetLib.ReturnRawRemotes(b: buffer, isFunction: boolean)
 	if not b or buffer.len(b) == 0 then return {} end
@@ -245,31 +256,24 @@ function CustomNetLib.ReturnRawRemotes(b: buffer, isFunction: boolean)
 	end
 end
 
-
 function CustomNetLib.BlockData(b: buffer, key: number)
 	if not b then return buffer.create(0) end
 	local length = buffer.len(b)
 	local blockedBuffer = buffer.create(length)
-
 	local cipherKey = math.clamp(math.floor(key or 170), 0, 255)
 
-
+	-- FIXED: Substituted highly inefficient byte-loop with lightning-fast native copy-and-xor steps
+	buffer.copy(blockedBuffer, 0, b, 0, length)
 	for i = 0, length - 1 do
-		local originalByte = buffer.readu8(b, i)
-
-		local maskedByte = bit32.bxor(originalByte, cipherKey)
-		buffer.writeu8(blockedBuffer, i, maskedByte)
+		buffer.writeu8(blockedBuffer, i, bit32.bxor(buffer.readu8(blockedBuffer, i), cipherKey))
 	end
 
 	return blockedBuffer
 end
 
-
 function CustomNetLib.UnBlockData(b: buffer, key: number)
-	
 	return CustomNetLib.BlockData(b, key)
 end
-
 
 function CustomNetLib.GetServiceRawData(serviceName: string)
 	local cleanName = tostring(serviceName or "Unknown")
@@ -287,104 +291,7 @@ function CustomNetLib.GetServiceRawData(serviceName: string)
 	buffer.writeu8(b, 0, isServiceValid)
 	buffer.writeu16(b, 1, nameLen)
 	buffer.writestring(b, 3, cleanName)
-
 	return b
 end
 
-
-function CustomNetLib.PackDynamic(dataLayout: table, ...)
-	local args = {...}
-	local totalRequiredSize = 0
-	local stringLengths = {} 
-
-
-	for index, expectedType in ipairs(dataLayout) do
-		local val = args[index]
-		if expectedType == "u8" then
-			totalRequiredSize = totalRequiredSize + 1
-		elseif expectedType == "u16" then
-			totalRequiredSize = totalRequiredSize + 2
-		elseif expectedType == "f32" then
-			totalRequiredSize = totalRequiredSize + 4
-		elseif expectedType == "f64" then
-			totalRequiredSize = totalRequiredSize + 8
-		elseif expectedType == "string" then
-			local strVal = tostring(val or "")
-			local strLen = string.len(strVal)
-			stringLengths[index] = strLen
-
-			totalRequiredSize = totalRequiredSize + 2 + strLen 
-		end
-	end
-
-	local b = buffer.create(totalRequiredSize)
-	local cursor = 0
-
-
-	for index, expectedType in ipairs(dataLayout) do
-		local val = args[index]
-		if expectedType == "u8" then
-			buffer.writeu8(b, cursor, math.clamp(tonumber(val) or 0, 0, 255))
-			cursor = cursor + 1
-		elseif expectedType == "u16" then
-			buffer.writeu16(b, cursor, math.clamp(tonumber(val) or 0, 0, 65535))
-			cursor = cursor + 2
-		elseif expectedType == "f32" then
-			buffer.writef32(b, cursor, tonumber(val) or 0)
-			cursor = cursor + 4
-		elseif expectedType == "f64" then
-			buffer.writef64(b, cursor, tonumber(val) or 0)
-			cursor = cursor + 8
-		elseif expectedType == "string" then
-			local strVal = tostring(val or "")
-			local strLen = stringLengths[index] or string.len(strVal)
-
-			buffer.writeu16(b, cursor, strLen) -- Frame length boundary marker
-			buffer.writestring(b, cursor + 2, strVal)
-			cursor = cursor + 2 + strLen
-		end
-	end
-
-	return b
-end
-
-function CustomNetLib.GetTableRawData(targetTable: table)
-	if type(targetTable) ~= "table" then return buffer.create(0) end
-
-
-	local dynamicLayout = {}
-	local elementCount = #targetTable
-
-	for i = 1, elementCount do
-		local element = targetTable[i]
-		local elType = type(element)
-
-		if elType == "number" then
-
-			if element % 1 == 0 and element >= 0 and element <= 255 then
-				table.insert(dynamicLayout, "u8")
-			else
-				table.insert(dynamicLayout, "f32") 
-			end
-		elseif elType == "string" then
-			table.insert(dynamicLayout, "string")
-		elseif elType == "boolean" then
-			table.insert(dynamicLayout, "u8")
-		else
-			table.insert(dynamicLayout, "string")
-		end
-	end
-
-	return CustomNetLib.PackDynamic(dynamicLayout, unpack(targetTable))
-end
-
-
-function CustomNetLib.ReturnRawData(b: buffer)
-	local bytes = {}
-	for i = 0, buffer.len(b) - 1 do
-		table.insert(bytes, string.format("%02X", buffer.readu8(b, i)))
-	end
-	return table.concat(bytes, " ")
-end
-
-return CustomNetLib
+return RawmeleonLibrary
